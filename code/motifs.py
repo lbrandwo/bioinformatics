@@ -1,3 +1,25 @@
+from itertools import product
+
+"""
+Bioinformatics Toolkit for Genomic Analysis
+
+Introduction:
+
+This Python script is a collection of bioinformatics functions tailored for genomic sequence analysis. It provides essential tools for pattern matching, 
+mutation analysis, genomic feature identification, and sequence analysis. These functions facilitate a wide range of bioinformatics tasks, from basic 
+sequence manipulation to advanced genomic inquiries, making it a valuable asset for researchers, educators, and developers in the field.
+
+Capabilities:
+
+1. **Pattern Matching**: Search for specific DNA sequences within a genome to locate genes, regulatory elements, and motifs.
+2. **Mutation Analysis**: Compare DNA sequences to analyze genetic variations and mutations, aiding in evolutionary studies and disease research.
+3. **Genomic Feature Identification**: Identify critical genomic features, such as replication origins, by analyzing nucleotide compositions and patterns.
+4. **Sequence Analysis**: Perform detailed analyses of DNA sequences, including finding frequent k-mers with mismatches and computing reverse complements.
+
+For examples and workflows check the /analysis folder.
+"""
+
+
 def PatternCount(Text, Pattern):
     """
     Counts the occurrences of a specific pattern within a given text.
@@ -218,3 +240,148 @@ def find_substring_positions(genome, pattern, d):
         if HammingDistance(genome[i:i+pattern_length], pattern) <= d:
             positions.append(str(i))
     return len(positions)
+
+
+def hamming_distance(s1, s2):
+    """
+    Calculates the Hamming distance between two DNA sequences.
+
+    Parameters:
+    s1 (str): The first DNA sequence.
+    s2 (str): The second DNA sequence.
+
+    Returns:
+    int: The number of mismatches between the two sequences.
+    """
+    return sum(ch1 != ch2 for ch1, ch2 in zip(s1, s2))
+
+
+def mismatches(kmer, d):
+    """
+    Generates all possible k-mers that are within a Hamming distance of d from the original k-mer.
+
+    Parameters:
+    kmer (str): The original k-mer.
+    d (int): The Hamming distance.
+
+    Returns:
+    generator: A generator yielding all k-mers within the specified distance.
+    """
+    nucleotides = 'ACGT'
+    for positions in product(nucleotides, repeat=len(kmer)):
+        if hamming_distance(kmer, ''.join(positions)) <= d:
+            yield ''.join(positions)
+
+
+def frequent_words_with_mismatches(text, k, d):
+    """
+    Identifies the most frequent k-mers within a text, allowing for up to d mismatches.
+
+    Parameters:
+    text (str): The DNA sequence.
+    k (int): The length of the k-mers.
+    d (int): The allowed number of mismatches.
+
+    Returns:
+    list: A list of the most frequent k-mers within the specified mismatch tolerance.
+    """
+    possible_kmers = set()
+    kmer_counts = {}
+
+    for i in range(len(text) - k + 1):
+        window = text[i:i+k]
+        for variant in mismatches(window, d):
+            possible_kmers.add(variant)
+
+    for kmer in possible_kmers:
+        kmer_counts[kmer] = sum(hamming_distance(
+            text[i:i+k], kmer) <= d for i in range(len(text) - k + 1))
+
+    max_count = max(kmer_counts.values())
+    return [kmer for kmer, count in kmer_counts.items() if count == max_count]
+
+
+def Neighbors(pattern, d):
+    """
+    Generates all k-mers that differ from the given k-mer by at most d mismatches.
+
+    Parameters:
+    pattern (str): The original k-mer.
+    d (int): The maximum number of allowed mismatches.
+
+    Returns:
+    set: A set of all possible k-mers within the specified Hamming distance.
+    """
+    if d == 0:
+        return {pattern}
+    if len(pattern) == 1:
+        return {'A', 'C', 'G', 'T'}
+    neighbors = set()
+    suffix_neighbors = Neighbors(pattern[1:], d)
+    for text in suffix_neighbors:
+        if HammingDistance(pattern[1:], text) < d:
+            for nucleotide in 'ACGT':
+                neighbors.add(nucleotide + text)
+        else:
+            neighbors.add(pattern[0] + text)
+    return neighbors
+
+
+def FrequentWordsWithMismatchesAndReverse(genome, k, d):
+    """
+    Finds the most frequent k-mers with up to d mismatches in a genome, including the reverse complement.
+
+    Parameters:
+    genome (str): The genome sequence.
+    k (int): The k-mer length.
+    d (int): The allowed number of mismatches.
+
+    Returns:
+    list: The most frequent k-mers with mismatches and their reverse complements.
+    """
+    freqMap = {}
+    for i in range(len(genome) - k + 1):
+        pattern = genome[i:i+k]
+        neighborhood = Neighbors(pattern, d) | Neighbors(
+            ReverseComplement(pattern), d)
+        for neighbor in neighborhood:
+            freqMap[neighbor] = freqMap.get(neighbor, 0) + 1
+
+    maxCount = max(freqMap.values())
+    return [kmer for kmer, count in freqMap.items() if count == maxCount]
+
+
+def compute_skew(genome):
+    """
+    Computes the skew array for a genome, indicating the difference between the cumulative number of 'G' and 'C'.
+
+    Parameters:
+    genome (str): The genome sequence.
+
+    Returns:
+    list: The skew values for each position in the genome.
+    """
+    skew = [0]  # Skew0 is 0
+    for i in range(len(genome)):
+        if genome[i] == 'G':
+            skew.append(skew[-1] + 1)
+        elif genome[i] == 'C':
+            skew.append(skew[-1] - 1)
+        else:
+            skew.append(skew[-1])
+    return skew
+
+
+def find_minimum_skew_positions(genome):
+    """
+    Identifies positions in the genome where the skew reaches a minimum, potential oriC locations.
+
+    Parameters:
+    genome (str): The genome sequence.
+
+    Returns:
+    list: Positions of minimum skew in the genome.
+    """
+    skew_values = compute_skew(genome)
+    min_skew = min(skew_values)
+    return [i for i, value in enumerate(skew_values) if value == min_skew]
